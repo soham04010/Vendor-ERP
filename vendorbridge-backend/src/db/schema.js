@@ -162,6 +162,15 @@ const notifications = pgTable('notifications', {
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow()
 });
 
+const password_resets = pgTable('password_resets', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  otp: varchar('otp', { length: 6 }).notNull(),
+  verified: boolean('verified').default(false),
+  expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow()
+});
+
 module.exports = {
   vendors,
   users,
@@ -175,5 +184,6 @@ module.exports = {
   purchase_orders,
   invoices,
   activity_logs,
-  notifications
+  notifications,
+  password_resets
 };
