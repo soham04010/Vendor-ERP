@@ -13,9 +13,11 @@ export const invoiceApi = {
     const response = await apiClient.get(`/invoices/${id}`);
     return response.data;
   },
-  downloadPdfUrl: (id: string) => {
-    const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-    return `${baseURL}/invoices/${id}/pdf`;
+  downloadPdf: async (id: string) => {
+    const response = await apiClient.get(`/invoices/${id}/pdf`, {
+      responseType: 'blob',
+    });
+    return response.data; // Blob
   },
   sendEmail: async (id: string) => {
     const response = await apiClient.post(`/invoices/${id}/send`);

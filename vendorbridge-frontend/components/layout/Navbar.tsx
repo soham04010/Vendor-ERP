@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useNotificationStore } from '@/store/notificationStore';
-import { Bell, Sun, Moon } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,19 +12,17 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
-import { useTheme } from 'next-themes';
+
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 export default function Navbar() {
   const { user, logout } = useAuthStore();
   const { notifications, unreadCount, fetchNotifications, markAsRead } = useNotificationStore();
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+
   const router = useRouter();
 
   useEffect(() => {
-    setMounted(true);
     if (user) {
       fetchNotifications();
       const interval = setInterval(fetchNotifications, 20000);
@@ -51,17 +49,6 @@ export default function Navbar() {
 
       {/* Actions */}
       <div className="flex items-center gap-4">
-        {/* Dark Mode toggle */}
-        {mounted && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="text-gray-600 dark:text-gray-300"
-          >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </Button>
-        )}
 
         {/* Notifications Dropdown */}
         <DropdownMenu>
@@ -69,8 +56,8 @@ export default function Navbar() {
             <Button variant="ghost" size="icon" className="relative text-gray-600 dark:text-gray-300">
               <Bell size={18} />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-4.5 h-4.5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold">
-                  {unreadCount}
+                <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold px-1 leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
             </Button>

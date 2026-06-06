@@ -8,11 +8,12 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-exports.sendMail = async ({ to, subject, html }) => {
+exports.sendMail = async ({ to, subject, html, attachments = [] }) => {
   return transporter.sendMail({
     from: `"VendorBridge ERP" <${process.env.EMAIL_USER}>`,
     to,
     subject,
-    html
+    html,
+    attachments
   });
 };

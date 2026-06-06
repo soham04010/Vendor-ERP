@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { analyticsApi } from '@/lib/api/analytics.api';
 import apiClient from '@/lib/api/client';
 import KPICard from '@/components/dashboard/KPICard';
@@ -8,8 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   XAxis,
@@ -22,52 +20,70 @@ import {
   Cell,
   Legend,
 } from 'recharts';
-import { Loader2, Download, TrendingUp, DollarSign, Award, FileSpreadsheet } from 'lucide-react';
+import { Loader2, Download, TrendingUp, DollarSign, Award, FileSpreadsheet, RefreshCw } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
+const CustomBarTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-4 py-2.5 text-xs">
+        <p className="font-bold text-gray-700 dark:text-gray-200 mb-1">{label}</p>
+        <p className="text-blue-600 dark:text-blue-400 font-semibold">
+          ₹{parseFloat(payload[0].value).toLocaleString('en-IN')}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function AdminAnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [spendingData, setSpendingData] = useState<any[]>([]);
   const [vendorPerformance, setVendorPerformance] = useState<any[]>([]);
   const [rfqStats, setRfqStats] = useState<any[]>([]);
   const [approvalStats, setApprovalStats] = useState<any[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const loadAnalytics = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    else setIsRefreshing(true);
+    try {
+      const [dashRes, spendRes, vendorRes, rfqRes, approvalRes] = await Promise.all([
+        analyticsApi.getDashboard(),
+        analyticsApi.getSpending(),
+        analyticsApi.getVendors(),
+        analyticsApi.getRfqs(),
+        analyticsApi.getApprovals(),
+      ]);
 
-  useEffect(() => {
-    async function loadAnalytics() {
-      setIsLoading(true);
-      try {
-        const [dashRes, spendRes, vendorRes, rfqRes, approvalRes] = await Promise.all([
-          analyticsApi.getDashboard(),
-          analyticsApi.getSpending(),
-          analyticsApi.getVendors(),
-          analyticsApi.getRfqs(),
-          analyticsApi.getApprovals(),
-        ]);
-
-        setDashboardData(dashRes);
-        setSpendingData(spendRes.map((item: any) => ({
-          month: item.month,
-          amount: parseFloat(item.amount) || 0,
-        })));
-        setVendorPerformance(vendorRes.slice(0, 5)); // top 5
-        setRfqStats(rfqRes.map((item: any) => ({ name: item.status.toUpperCase(), value: parseInt(item.count) })));
-        setApprovalStats(approvalRes.map((item: any) => ({ name: item.status.toUpperCase(), value: parseInt(item.count) })));
-      } catch (err) {
-        toast.error('Failed to load analytical metrics');
-      } finally {
-        setIsLoading(false);
-      }
+      setDashboardData(dashRes);
+      setSpendingData(spendRes.map((item: any) => ({
+        month: item.month,
+        amount: parseFloat(item.amount) || 0,
+      })));
+      setVendorPerformance(vendorRes.slice(0, 5));
+      setRfqStats(rfqRes.map((item: any) => ({ name: item.status.toUpperCase(), value: parseInt(item.count) })));
+      setApprovalStats(approvalRes.map((item: any) => ({ name: item.status.toUpperCase(), value: parseInt(item.count) })));
+      setLastUpdated(new Date());
+    } catch (err) {
+      if (!silent) toast.error('Failed to load analytical metrics');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-    loadAnalytics();
   }, []);
+
+  useEffect(() => {
+    loadAnalytics(false);
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(() => loadAnalytics(true), 30000);
+    return () => clearInterval(interval);
+  }, [loadAnalytics]);
 
   const handleExportCSV = async () => {
     setIsExporting(true);
@@ -88,6 +104,9 @@ export default function AdminAnalyticsPage() {
     }
   };
 
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] gap-3">
@@ -97,28 +116,32 @@ export default function AdminAnalyticsPage() {
     );
   }
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val);
-  };
-
   return (
     <div className="space-y-6 pb-10">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-2xl text-white shadow-lg">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Procurement Intelligence</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Data insights, monthly spend patterns, vendor performance rankings, and activity metrics.
+          <h2 className="text-2xl font-bold tracking-tight">Procurement Intelligence</h2>
+          <p className="text-blue-100 text-sm mt-1">
+            Data insights, spend patterns, vendor rankings, and activity metrics.
           </p>
+          {lastUpdated && (
+            <p className="text-blue-200 text-[10px] mt-1.5 flex items-center gap-1">
+              {isRefreshing ? <Loader2 size={10} className="animate-spin" /> : null}
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </p>
+          )}
         </div>
-        <Button onClick={handleExportCSV} disabled={isExporting} className="gap-2 text-xs">
-          {isExporting ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
-          <span>Export Spend Report (CSV)</span>
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => loadAnalytics(false)} variant="secondary" size="sm" className="gap-1.5 text-xs bg-white/20 hover:bg-white/30 text-white border-white/30">
+            <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+            Refresh
+          </Button>
+          <Button onClick={handleExportCSV} disabled={isExporting} size="sm" className="gap-1.5 text-xs bg-white text-blue-700 hover:bg-blue-50 font-semibold">
+            {isExporting ? <Loader2 className="animate-spin" size={13} /> : <Download size={13} />}
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -142,117 +165,118 @@ export default function AdminAnalyticsPage() {
           description="Total orders generated"
         />
         <KPICard
-          title="Avg Vendor Count"
+          title="Certified Vendor Base"
           value={dashboardData?.metrics?.totalVendors || 0}
           icon={<Award size={20} />}
-          description="Certified vendor base"
+          description="Active vendor count"
         />
       </div>
 
-      {/* Spend Over Time Chart */}
-      <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+      {/* Cumulative Monthly Spend — BAR CHART */}
+      <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
         <CardContent className="p-6 space-y-4">
-          <div>
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">Cumulative Monthly Spend Trends</h3>
-            <p className="text-xs text-gray-500">Procurement financial commitments over time</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">Cumulative Monthly Spend Trends</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Procurement financial commitments over time</p>
+            </div>
+            <span className="text-[10px] bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full font-semibold">Live</span>
           </div>
           <div className="h-80 w-full">
-            {!mounted || spendingData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                {!mounted ? "Loading chart..." : "No monthly transactions recorded."}
-              </div>
+            {spendingData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-gray-400">No monthly transactions recorded.</div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={spendingData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <BarChart data={spendingData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#6366f1" />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-gray-150 dark:stroke-gray-850" />
-                  <XAxis dataKey="month" className="text-[10px]" tickLine={false} />
-                  <YAxis className="text-[10px]" tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
-                  <Tooltip
-                    formatter={(value: any) => [`₹${parseFloat(value).toLocaleString('en-IN')}`, 'Spend']}
-                    contentStyle={{ borderRadius: '8px', fontSize: '12px' }}
-                  />
-                  <Area type="monotone" dataKey="amount" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorSpend)" />
-                </AreaChart>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
+                  <Tooltip content={<CustomBarTooltip />} cursor={{ fill: 'rgba(59,130,246,0.06)' }} />
+                  <Bar dataKey="amount" fill="url(#barGradient)" radius={[6, 6, 0, 0]} maxBarSize={52} />
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Grid: Vendor Performance & Distribution Charts */}
+      {/* Grid: Vendor Performance & Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Vendor Rankings */}
-        <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
           <CardContent className="p-6 space-y-4">
             <div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white">Top 5 Vendors by Spend Value</h3>
-              <p className="text-xs text-gray-500">Vendors with highest purchase orders value</p>
+              <p className="text-xs text-gray-500 mt-0.5">Vendors with highest purchase order value</p>
             </div>
             <div className="h-64 w-full">
-            {!mounted || vendorPerformance.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                {!mounted ? "Loading chart..." : "No vendor metrics recorded."}
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={vendorPerformance} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-gray-150 dark:stroke-gray-850" />
-                  <XAxis type="number" className="text-[10px]" tickLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
-                  <YAxis type="category" dataKey="vendor_name" className="text-[10px]" tickLine={false} width={100} />
-                  <Tooltip
-                    formatter={(value: any) => [`₹${parseFloat(value).toLocaleString('en-IN')}`, 'Spent Value']}
-                    contentStyle={{ fontSize: '11px' }}
-                  />
-                  <Bar dataKey="total_po_value" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={25} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+              {vendorPerformance.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-gray-400">No vendor metrics recorded.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={vendorPerformance} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
+                    <YAxis type="category" dataKey="vendor_name" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} width={100} />
+                    <Tooltip
+                      formatter={(value: any) => [`₹${parseFloat(value).toLocaleString('en-IN')}`, 'Spent']}
+                      contentStyle={{ borderRadius: '8px', fontSize: '11px', border: '1px solid #e5e7eb' }}
+                    />
+                    <Bar dataKey="total_po_value" fill="#10b981" radius={[0, 5, 5, 0]} maxBarSize={22} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </CardContent>
         </Card>
 
-        {/* Distributions */}
-        <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        {/* RFQ Status Distribution */}
+        <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
           <CardContent className="p-6 space-y-4">
             <div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white">RFQ Status Distribution</h3>
-              <p className="text-xs text-gray-500">Comparison of RFQs in draft, open, closed, or award status</p>
+              <p className="text-xs text-gray-500 mt-0.5">Comparison of RFQs in draft, open, closed, or awarded</p>
             </div>
             <div className="h-64 flex flex-col sm:flex-row items-center justify-center gap-6">
-              {!mounted || rfqStats.length === 0 ? (
-                <div className="text-xs text-gray-400">{!mounted ? "Loading chart..." : "No RFQs recorded."}</div>
+              {rfqStats.length === 0 ? (
+                <div className="text-xs text-gray-400">No RFQs recorded.</div>
               ) : (
                 <>
                   <div className="h-full w-full sm:w-1/2">
-                    <ResponsiveContainer width="100%" height={240}>
+                    <ResponsiveContainer width="100%" height={220}>
                       <PieChart>
                         <Pie
                           data={rfqStats}
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={3}
+                          innerRadius={56}
+                          outerRadius={82}
+                          paddingAngle={4}
                           dataKey="value"
+                          strokeWidth={2}
+                          stroke="transparent"
                         >
                           {rfqStats.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value) => [value, 'RFQs']} />
+                        <Tooltip
+                          formatter={(value) => [value, 'RFQs']}
+                          contentStyle={{ borderRadius: '8px', fontSize: '11px', border: '1px solid #e5e7eb' }}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="flex flex-col gap-2 text-xs">
+                  <div className="flex flex-col gap-2.5 text-xs">
                     {rfqStats.map((item, idx) => (
-                      <div key={item.name} className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                        <span className="font-semibold text-gray-800 dark:text-gray-300">{item.name}:</span>
-                        <span className="text-gray-500">{item.value}</span>
+                      <div key={item.name} className="flex items-center gap-2.5">
+                        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">{item.name}</span>
+                        <span className="ml-auto font-bold text-gray-900 dark:text-white pl-3">{item.value}</span>
                       </div>
                     ))}
                   </div>

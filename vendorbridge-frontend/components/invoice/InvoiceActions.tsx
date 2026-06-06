@@ -21,15 +21,29 @@ export default function InvoiceActions({
 }: InvoiceActionsProps) {
   const [isSendingMail, setIsSendingMail] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleDownloadPdf = () => {
-    // Open in new tab or trigger download directly
-    const url = invoiceApi.downloadPdfUrl(invoiceId);
-    window.open(url, '_blank');
+  const handleDownloadPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      const blob = await invoiceApi.downloadPdf(invoiceId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${invoiceId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Failed to download PDF');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   const handleSendEmail = async () => {
@@ -64,8 +78,8 @@ export default function InvoiceActions({
           <Printer size={15} />
           <span>Print / Save HTML</span>
         </Button>
-        <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="gap-2">
-          <Download size={15} />
+        <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={isDownloadingPdf} className="gap-2">
+          {isDownloadingPdf ? <Loader2 className="animate-spin" size={14} /> : <Download size={15} />}
           <span>Download PDF</span>
         </Button>
       </div>
