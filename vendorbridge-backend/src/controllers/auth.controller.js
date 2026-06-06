@@ -1,8 +1,16 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { eq } = require('drizzle-orm');
+const { eq ,and, gt } = require('drizzle-orm');
 const { db } = require('../config/db');
 const { users, vendors } = require('../db/schema');
+
+
+
+
+const { password_resets } = require('../db/schema');
+const { sendMail } = require('../services/email.service');
+
+
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
 
@@ -167,5 +175,163 @@ exports.getMe = async (req, res) => {
   } catch (error) {
     console.error('GetMe Error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'No account found with this email'
+      });
+    }
+
+    const otp = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+
+    const expiresAt = new Date(
+      Date.now() + 10 * 60 * 1000
+    );
+
+    await db
+      .delete(password_resets)
+      .where(eq(password_resets.email, email));
+
+    await db.insert(password_resets).values({
+      email,
+      otp,
+      expires_at: expiresAt
+    });
+
+    await sendMail({
+      to: email,
+      subject: 'VendorBridge Password Reset OTP',
+      html: `
+        <h2>Password Reset Request</h2>
+        <p>Your OTP is:</p>
+        <h1>${otp}</h1>
+        <p>This OTP expires in 10 minutes.</p>
+      `
+    });
+
+    return res.json({
+      success: true,
+      message: 'OTP sent successfully'
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      error: 'Failed to send OTP'
+    });
+  }
+};
+
+exports.verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    const [resetRecord] = await db
+      .select()
+      .from(password_resets)
+      .where(eq(password_resets.email, email));
+
+    if (!resetRecord) {
+      return res.status(404).json({
+        error: 'OTP request not found'
+      });
+    }
+
+    if (resetRecord.otp !== otp) {
+      return res.status(400).json({
+        error: 'Invalid OTP'
+      });
+    }
+
+    if (new Date() > new Date(resetRecord.expires_at)) {
+      return res.status(400).json({
+        error: 'OTP expired'
+      });
+    }
+
+    await db
+      .update(password_resets)
+      .set({
+        verified: true
+      })
+      .where(eq(password_resets.email, email));
+
+    return res.json({
+      success: true,
+      message: 'OTP verified successfully'
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      error: 'Failed to verify OTP'
+    });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    const [resetRecord] = await db
+      .select()
+      .from(password_resets)
+      .where(eq(password_resets.email, email));
+
+    if (!resetRecord) {
+      return res.status(404).json({
+        error: 'Password reset request not found'
+      });
+    }
+
+    if (!resetRecord.verified) {
+      return res.status(400).json({
+        error: 'OTP verification required'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(
+      newPassword,
+      10
+    );
+
+    await db
+      .update(users)
+      .set({
+        password_hash: hashedPassword
+      })
+      .where(eq(users.email, email));
+
+    await db
+      .delete(password_resets)
+      .where(eq(password_resets.email, email));
+
+    return res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      error: 'Failed to reset password'
+    });
   }
 };
