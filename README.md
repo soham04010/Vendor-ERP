@@ -28,7 +28,7 @@
 - [Environment Variables](#-environment-variables)
 - [Getting Started](#-getting-started)
 - [Database Schema](#-database-schema)
-- [Team](#-team)
+
 
 ---
 
