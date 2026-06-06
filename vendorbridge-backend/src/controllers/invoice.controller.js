@@ -3,7 +3,7 @@ const { db } = require('../config/db');
 const { invoices, purchase_orders, vendors, users, quotation_items } = require('../db/schema');
 const { createLog } = require('../services/log.service');
 const { createNotification } = require('../services/notification.service');
-const { generateInvoicePDF } = require('../services/pdf.service');
+const { generateInvoicePDF, generateInvoicePDFBuffer } = require('../services/pdf.service');
 const { sendMail } = require('../services/email.service');
 const generateInvoiceNumber = require('../utils/generateInvoiceNumber');
 const calculateTax = require('../utils/calculateTax');
@@ -252,7 +252,10 @@ exports.sendInvoiceEmail = async (req, res) => {
       <p>Best regards,<br/>VendorBridge ERP</p>
     `;
 
-    // Send mock email
+    // Generate a real PDF buffer to attach to the email
+    const pdfBuffer = await generateInvoicePDFBuffer(invoice, po, vendor);
+
+    // Send email with the real PDF attached
     await sendMail({
       to: vendor.email,
       subject,
@@ -260,7 +263,8 @@ exports.sendInvoiceEmail = async (req, res) => {
       attachments: [
         {
           filename: `invoice-${invoice.invoice_number}.pdf`,
-          content: 'Mock PDF Content Buffer representation'
+          content: pdfBuffer,
+          contentType: 'application/pdf'
         }
       ]
     });

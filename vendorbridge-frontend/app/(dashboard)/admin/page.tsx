@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { analyticsApi } from '@/lib/api/analytics.api';
 import { authApi } from '@/lib/api/auth.api';
@@ -20,73 +20,64 @@ export default function AdminDashboardPage() {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activities, setActivities] = useState<any[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  useEffect(() => {
-    setMounted(true);
+  const loadDashboardData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    try {
+      const [dashRes, spendingRes, usersRes, vendorsRes] = await Promise.all([
+        analyticsApi.getDashboard(),
+        analyticsApi.getSpending(),
+        authApi.getUsers(),
+        vendorApi.getAll(),
+      ]);
+
+      setMetrics(dashRes.metrics);
+      setSpendingData(spendingRes.map((item: any) => ({
+        month: item.month,
+        amount: parseFloat(item.amount) || 0,
+      })));
+      setUsersList(usersRes || []);
+
+      const logs: any[] = [];
+      const usersArray = usersRes || [];
+      usersArray.forEach((u: any) => {
+        logs.push({
+          id: `user-${u.id}`,
+          action: 'USER_CREATED',
+          description: `registered account for ${u.name} as ${u.role}`,
+          created_at: u.created_at || new Date().toISOString(),
+          user: { name: 'System' }
+        });
+      });
+      const vendorsArray = vendorsRes.vendors || vendorsRes || [];
+      vendorsArray.forEach((v: any) => {
+        logs.push({
+          id: `vendor-${v.id}`,
+          action: 'VENDOR_CREATED',
+          description: `registered new vendor organization: ${v.name}`,
+          created_at: v.created_at || new Date().toISOString(),
+          user: { name: 'System' }
+        });
+      });
+      logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setActivities(logs.slice(0, 10));
+      setLastUpdated(new Date());
+    } catch (error: any) {
+      console.error(error);
+      if (!silent) toast.error('Failed to load admin dashboard statistics');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    async function loadDashboardData() {
-      setIsLoading(true);
-      try {
-        const [dashRes, spendingRes, usersRes, vendorsRes] = await Promise.all([
-          analyticsApi.getDashboard(),
-          analyticsApi.getSpending(),
-          authApi.getUsers(),
-          vendorApi.getAll(),
-        ]);
-
-        setMetrics(dashRes.metrics);
-        setSpendingData(spendingRes.map((item: any) => ({
-          month: item.month,
-          amount: parseFloat(item.amount) || 0,
-        })));
-        setUsersList(usersRes || []);
-
-        // Synthesize dynamic activity logs from actual database records
-        const logs: any[] = [];
-        
-        // Add user signup/creation logs
-        const usersArray = usersRes || [];
-        usersArray.forEach((u: any) => {
-          logs.push({
-            id: `user-${u.id}`,
-            action: 'USER_CREATED',
-            description: `registered account for ${u.name} as ${u.role}`,
-            created_at: u.created_at || new Date().toISOString(),
-            user: { name: 'System' }
-          });
-        });
-
-        // Add vendor register logs
-        const vendorsArray = vendorsRes.vendors || vendorsRes || [];
-        vendorsArray.forEach((v: any) => {
-          logs.push({
-            id: `vendor-${v.id}`,
-            action: 'VENDOR_CREATED',
-            description: `registered new vendor organization: ${v.name}`,
-            created_at: v.created_at || new Date().toISOString(),
-            user: { name: 'System' }
-          });
-        });
-
-        // Sort descending by date
-        logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        setActivities(logs.slice(0, 10)); // Take top 10
-
-      } catch (error: any) {
-        console.error(error);
-        toast.error('Failed to load admin dashboard statistics');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
     if (user) {
-      loadDashboardData();
+      loadDashboardData(false);
+      const interval = setInterval(() => loadDashboardData(true), 30000);
+      return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user, loadDashboardData]);
 
   if (isLoading) {
     return (
@@ -155,9 +146,9 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-gray-500">PO generated values grouped by month</p>
           </div>
           <div className="h-72 w-full">
-            {!mounted || spendingData.length === 0 ? (
+            {spendingData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                {!mounted ? "Loading chart..." : "No spending data recorded yet."}
+                No spending data recorded yet.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
