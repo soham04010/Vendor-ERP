@@ -13,6 +13,7 @@ const purchaseOrderRoutes = require('./routes/purchaseOrder.routes');
 const invoiceRoutes = require('./routes/invoice.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const logsRoutes = require('./routes/logs.routes');
 
 const app = express();
 
@@ -31,5 +32,6 @@ app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/logs', logsRoutes);
 
 module.exports = app;
