@@ -1,20 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { vendorApi } from '@/lib/api/vendor.api';
 import { rfqApi } from '@/lib/api/rfq.api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Trash2, Plus, Loader2 } from 'lucide-react';
+import { Trash2, Plus } from 'lucide-react';
 
 const rfqSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -26,22 +24,18 @@ const rfqSchema = z.object({
     quantity: z.coerce.number().positive('Quantity must be positive'),
     unit: z.string().default('pcs'),
   })).min(1, 'At least one item is required'),
-  vendor_ids: z.array(z.string()).min(1, 'Please select at least one vendor'),
 });
 
 type RFQFormValues = z.infer<typeof rfqSchema>;
 
 export default function RFQForm() {
-  const [vendorsList, setVendorsList] = useState<any[]>([]);
-  const [isLoadingVendors, setIsLoadingVendors] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
-  const { register, control, handleSubmit, setValue, watch, formState: { errors } } = useForm<RFQFormValues>({
+  const { register, control, handleSubmit, formState: { errors } } = useForm<any>({
     resolver: zodResolver(rfqSchema),
     defaultValues: {
       items: [{ product_name: '', description: '', quantity: 1, unit: 'pcs' }],
-      vendor_ids: [],
     }
   });
 
@@ -50,31 +44,7 @@ export default function RFQForm() {
     name: 'items',
   });
 
-  useEffect(() => {
-    async function loadVendors() {
-      try {
-        const res = await vendorApi.getAll();
-        setVendorsList(res.vendors || res || []);
-      } catch (err) {
-        toast.error('Failed to load vendors');
-      } finally {
-        setIsLoadingVendors(false);
-      }
-    }
-    loadVendors();
-  }, []);
-
-  const selectedVendorIds = watch('vendor_ids') || [];
-
-  const handleVendorToggle = (vendorId: string, checked: boolean) => {
-    if (checked) {
-      setValue('vendor_ids', [...selectedVendorIds, vendorId]);
-    } else {
-      setValue('vendor_ids', selectedVendorIds.filter((id) => id !== vendorId));
-    }
-  };
-
-  const onSubmit = async (data: RFQFormValues) => {
+  const onSubmit = async (data: any) => {
     setIsSubmitting(true);
     try {
       // Create published or draft RFQ
@@ -92,7 +62,7 @@ export default function RFQForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pb-12">
       {/* General Details */}
       <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <CardContent className="p-6 space-y-4">
@@ -103,14 +73,14 @@ export default function RFQForm() {
           <div className="space-y-2">
             <Label htmlFor="title">RFQ Title</Label>
             <Input id="title" placeholder="e.g. Office Supplies Q1 2025" {...register('title')} />
-            {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+            {errors.title && <p className="text-xs text-red-500">{(errors.title as any).message?.toString()}</p>}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="deadline">Submission Deadline</Label>
               <Input id="deadline" type="datetime-local" {...register('deadline')} />
-              {errors.deadline && <p className="text-xs text-red-500">{errors.deadline.message}</p>}
+              {errors.deadline && <p className="text-xs text-red-500">{(errors.deadline as any).message?.toString()}</p>}
             </div>
           </div>
 
@@ -138,7 +108,7 @@ export default function RFQForm() {
             </Button>
           </div>
 
-          {errors.items && <p className="text-xs text-red-500">{errors.items.message}</p>}
+          {errors.items && <p className="text-xs text-red-500">{(errors.items as any).message?.toString()}</p>}
 
           <div className="space-y-4">
             {fields.map((field, idx) => (
@@ -176,44 +146,11 @@ export default function RFQForm() {
         </CardContent>
       </Card>
 
-      {/* Vendor Assignment */}
-      <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-        <CardContent className="p-6 space-y-4">
-          <h2 className="text-base font-bold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-800 pb-2">
-            Assign Invitees / Vendors
-          </h2>
-          {errors.vendor_ids && <p className="text-xs text-red-500">{errors.vendor_ids.message}</p>}
-
-          {isLoadingVendors ? (
-            <div className="flex items-center justify-center p-4">
-              <Loader2 className="animate-spin text-blue-500" size={20} />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2">
-              {vendorsList.map((vendor) => (
-                <div 
-                  key={vendor.id} 
-                  className="flex items-center gap-3 p-3 border border-gray-100 dark:border-gray-800 rounded-lg bg-gray-50/20"
-                >
-                  <Checkbox 
-                    id={`vendor-${vendor.id}`} 
-                    checked={selectedVendorIds.includes(vendor.id)}
-                    onCheckedChange={(checked) => handleVendorToggle(vendor.id, !!checked)}
-                  />
-                  <label htmlFor={`vendor-${vendor.id}`} className="text-xs cursor-pointer select-none">
-                    <span className="font-semibold text-gray-950 dark:text-white block">{vendor.name}</span>
-                    <span className="text-gray-500 block">{vendor.category} · Rating: {vendor.rating}</span>
-                  </label>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Button type="submit" disabled={isSubmitting} className="w-full">
-        {isSubmitting ? 'Creating RFQ...' : 'Create & Publish RFQ'}
-      </Button>
+      <div className="flex justify-end pt-4">
+        <Button type="submit" disabled={isSubmitting} className="w-full md:w-auto px-8 py-2.5 text-sm font-semibold">
+          {isSubmitting ? 'Creating RFQ...' : 'Create & Publish RFQ'}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -5,7 +5,7 @@ export const approvalApi = {
     const response = await apiClient.get('/approvals');
     return response.data;
   },
-  submit: async (data: { quotation_id: string; rfq_id: string; notes?: string }) => {
+  submit: async (data: { quotation_id?: string; quotation_ids?: string[]; rfq_id: string; remarks?: string }) => {
     const response = await apiClient.post('/approvals', data);
     return response.data;
   },
@@ -13,8 +13,8 @@ export const approvalApi = {
     const response = await apiClient.get(`/approvals/${id}`);
     return response.data;
   },
-  approve: async (id: string, remarks?: string) => {
-    const response = await apiClient.patch(`/approvals/${id}/approve`, { remarks });
+  approve: async (id: string, remarks?: string, selectedQuotationId?: string) => {
+    const response = await apiClient.patch(`/approvals/${id}/approve`, { remarks, selectedQuotationId });
     return response.data;
   },
   reject: async (id: string, remarks: string) => {

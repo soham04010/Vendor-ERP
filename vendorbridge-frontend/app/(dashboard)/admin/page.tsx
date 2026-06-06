@@ -20,6 +20,11 @@ export default function AdminDashboardPage() {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activities, setActivities] = useState<any[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -150,12 +155,12 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-gray-500">PO generated values grouped by month</p>
           </div>
           <div className="h-72 w-full">
-            {spendingData.length === 0 ? (
+            {!mounted || spendingData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                No spending data recorded yet.
+                {!mounted ? "Loading chart..." : "No spending data recorded yet."}
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={spendingData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-gray-100 dark:stroke-gray-800" />
                   <XAxis dataKey="month" className="text-[10px]" tickLine={false} />

@@ -25,8 +25,8 @@ exports.getApprovals = async (req, res) => {
     })
     .from(approvals)
     .innerJoin(rfqs, eq(rfqs.id, approvals.rfq_id))
-    .innerJoin(quotations, eq(quotations.id, approvals.quotation_id))
-    .innerJoin(vendors, eq(vendors.id, quotations.vendor_id))
+    .leftJoin(quotations, eq(quotations.id, approvals.quotation_id))
+    .leftJoin(vendors, eq(vendors.id, quotations.vendor_id))
     .innerJoin(users, eq(users.id, approvals.submitted_by))
     .orderBy(desc(approvals.submitted_at));
 
@@ -42,34 +42,64 @@ exports.getApprovals = async (req, res) => {
 // @access  Private (Admin, Officer)
 exports.submitApproval = async (req, res) => {
   try {
-    const { quotation_id, rfq_id, remarks } = req.body;
+    const { rfq_id, remarks, quotation_ids } = req.body;
 
-    if (!quotation_id || !rfq_id) {
-      return res.status(400).json({ error: 'Quotation ID and RFQ ID are required' });
+    if (!rfq_id) {
+      return res.status(400).json({ error: 'RFQ ID is required' });
     }
 
-    // Verify quotation exists and is selected
-    const [quotation] = await db.select().from(quotations).where(eq(quotations.id, quotation_id));
-    if (!quotation) {
-      return res.status(404).json({ error: 'Quotation not found' });
+    // Verify RFQ exists
+    const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, rfq_id));
+    if (!rfq) {
+      return res.status(404).json({ error: 'RFQ not found' });
+    }
+
+    // Check if there is already a pending approval request for this RFQ
+    const [existingPending] = await db.select().from(approvals).where(
+      and(
+        eq(approvals.rfq_id, rfq_id),
+        eq(approvals.status, 'pending')
+      )
+    );
+    if (existingPending) {
+      return res.status(400).json({ error: 'An approval request for this RFQ is already pending review' });
     }
 
     const [managerUser] = await db.select().from(users).where(and(eq(users.role, 'manager'), eq(users.is_active, true))).limit(1);
 
-    const [newApproval] = await db.insert(approvals).values({
-      quotation_id,
-      rfq_id,
-      submitted_by: req.user.id,
-      assigned_to: managerUser ? managerUser.id : null,
-      status: 'pending',
-      remarks: remarks || 'Awaiting review'
-    }).returning();
+    const newApproval = await db.transaction(async (tx) => {
+      // Update is_selected and status for the quotations of this RFQ
+      if (quotation_ids && Array.isArray(quotation_ids) && quotation_ids.length > 0) {
+        // Deselect all quotations for this RFQ
+        await tx.update(quotations)
+          .set({ is_selected: false, status: 'submitted', updated_at: new Date() })
+          .where(eq(quotations.rfq_id, rfq_id));
+
+        // Select the chosen ones
+        for (const qId of quotation_ids) {
+          await tx.update(quotations)
+            .set({ is_selected: true, status: 'selected', updated_at: new Date() })
+            .where(eq(quotations.id, qId));
+        }
+      }
+
+      const [insertedApproval] = await tx.insert(approvals).values({
+        rfq_id,
+        submitted_by: req.user.id,
+        assigned_to: managerUser ? managerUser.id : null,
+        status: 'pending',
+        remarks: remarks || 'Awaiting review',
+        quotation_id: (quotation_ids && quotation_ids.length > 0) ? quotation_ids[0] : null
+      }).returning();
+
+      return insertedApproval;
+    });
 
     if (managerUser) {
       await createNotification({
         userId: managerUser.id,
         title: 'Approval Request',
-        message: `Approval request submitted for RFQ Quotation by ${req.user.role}`,
+        message: `New RFQ ${rfq.rfq_number} submitted for your approval review by ${req.user.name || 'Officer'}.`,
         type: 'approval_request',
         entityId: newApproval.id
       });
@@ -80,7 +110,7 @@ exports.submitApproval = async (req, res) => {
       action: 'APPROVAL_SUBMITTED',
       entityType: 'approvals',
       entityId: newApproval.id,
-      description: `Submitted approval request for quotation ${quotation_id}`
+      description: `Submitted RFQ ${rfq.rfq_number} for approval review`
     });
 
     res.status(201).json(newApproval);
@@ -112,8 +142,8 @@ exports.getApprovalById = async (req, res) => {
     })
     .from(approvals)
     .innerJoin(rfqs, eq(rfqs.id, approvals.rfq_id))
-    .innerJoin(quotations, eq(quotations.id, approvals.quotation_id))
-    .innerJoin(vendors, eq(vendors.id, quotations.vendor_id))
+    .leftJoin(quotations, eq(quotations.id, approvals.quotation_id))
+    .leftJoin(vendors, eq(vendors.id, quotations.vendor_id))
     .innerJoin(users, eq(users.id, approvals.submitted_by))
     .where(eq(approvals.id, id));
 
@@ -134,7 +164,7 @@ exports.getApprovalById = async (req, res) => {
 exports.approveApproval = async (req, res) => {
   try {
     const { id } = req.params;
-    const { remarks } = req.body;
+    const { remarks, selectedQuotationId } = req.body;
 
     const [approval] = await db.select().from(approvals).where(eq(approvals.id, id));
     if (!approval) {
@@ -145,13 +175,50 @@ exports.approveApproval = async (req, res) => {
       return res.status(400).json({ error: 'Approval request is already processed' });
     }
 
-    const [quotation] = await db.select().from(quotations).where(eq(quotations.id, approval.quotation_id));
+    // Determine the quotation to approve (defaults to the one proposed by officer, or overridden by manager)
+    let targetQuotationId = selectedQuotationId || approval.quotation_id;
+    if (!targetQuotationId) {
+      return res.status(400).json({ error: 'A winning bid/quotation must be selected to approve' });
+    }
+
+    // Verify the selected quotation exists and belongs to the same RFQ
+    const [newQuotation] = await db.select().from(quotations).where(
+      and(
+        eq(quotations.id, targetQuotationId),
+        eq(quotations.rfq_id, approval.rfq_id)
+      )
+    );
+    if (!newQuotation) {
+      return res.status(400).json({ error: 'Selected quotation does not exist or does not belong to this RFQ' });
+    }
+
+    const [quotation] = await db.select().from(quotations).where(eq(quotations.id, targetQuotationId));
     const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, approval.rfq_id));
 
     const poNumber = await generatePONumber();
 
     const result = await db.transaction(async (tx) => {
-      // 1. Update approval status
+      // 1. If manager selection differs from original, update relations
+      if (targetQuotationId !== approval.quotation_id) {
+        if (approval.quotation_id) {
+          // Deselect the old one
+          await tx.update(quotations)
+            .set({ is_selected: false, updated_at: new Date() })
+            .where(eq(quotations.id, approval.quotation_id));
+        }
+
+        // Select the new one
+        await tx.update(quotations)
+          .set({ is_selected: true, updated_at: new Date() })
+          .where(eq(quotations.id, targetQuotationId));
+
+        // Update approval's quotation_id
+        await tx.update(approvals)
+          .set({ quotation_id: targetQuotationId, updated_at: new Date() })
+          .where(eq(approvals.id, id));
+      }
+
+      // 2. Update approval status
       const [updatedApproval] = await tx.update(approvals)
         .set({
           status: 'approved',
@@ -162,16 +229,26 @@ exports.approveApproval = async (req, res) => {
         .where(eq(approvals.id, id))
         .returning();
 
-      // 2. Update quotation status
+      // 3. Update quotation status
       await tx.update(quotations)
         .set({ status: 'approved', updated_at: new Date() })
-        .where(eq(quotations.id, approval.quotation_id));
+        .where(eq(quotations.id, targetQuotationId));
 
-      // 3. Auto-generate Purchase Order
+      // 3b. Mark all other quotations for this RFQ as rejected
+      await tx.update(quotations)
+        .set({ status: 'rejected', is_selected: false, updated_at: new Date() })
+        .where(
+          and(
+            eq(quotations.rfq_id, approval.rfq_id),
+            ne(quotations.id, targetQuotationId)
+          )
+        );
+
+      // 4. Auto-generate Purchase Order
       const [newPo] = await tx.insert(purchase_orders).values({
         po_number: poNumber,
         rfq_id: approval.rfq_id,
-        quotation_id: approval.quotation_id,
+        quotation_id: targetQuotationId,
         approval_id: id,
         vendor_id: quotation.vendor_id,
         total_amount: quotation.total_amount,
@@ -202,6 +279,38 @@ exports.approveApproval = async (req, res) => {
         type: 'po_issued',
         entityId: result.newPo.id
       });
+      
+      // Also notify selected quotation
+      await createNotification({
+        userId: u.id,
+        title: 'Quotation Selected',
+        message: 'Your quotation for this RFQ is selected',
+        type: 'quotation_selected',
+        entityId: quotation.id
+      });
+    }
+
+    // Notify other vendors who submitted quotations for this RFQ that they were not selected
+    const otherQuotations = await db.select()
+      .from(quotations)
+      .where(
+        and(
+          eq(quotations.rfq_id, approval.rfq_id),
+          ne(quotations.id, targetQuotationId)
+        )
+      );
+
+    for (const otherQ of otherQuotations) {
+      const otherVendorUsers = await db.select().from(users).where(eq(users.vendor_id, otherQ.vendor_id));
+      for (const u of otherVendorUsers) {
+        await createNotification({
+          userId: u.id,
+          title: 'Quotation Not Selected',
+          message: 'Your quotation for this RFQ was not selected',
+          type: 'quotation_not_selected',
+          entityId: otherQ.id
+        });
+      }
     }
 
     // Write logs
@@ -253,7 +362,6 @@ exports.rejectApproval = async (req, res) => {
       return res.status(400).json({ error: 'Approval request is already processed' });
     }
 
-    const [quotation] = await db.select().from(quotations).where(eq(quotations.id, approval.quotation_id));
     const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, approval.rfq_id));
 
     const result = await db.transaction(async (tx) => {
@@ -267,10 +375,12 @@ exports.rejectApproval = async (req, res) => {
         .where(eq(approvals.id, id))
         .returning();
 
-      // Reset quotation status to submitted (or keep rejected)
-      await tx.update(quotations)
-        .set({ status: 'rejected', is_selected: false, updated_at: new Date() })
-        .where(eq(quotations.id, approval.quotation_id));
+      // Reset quotation status to submitted (or keep rejected) if a quotation was associated
+      if (approval.quotation_id) {
+        await tx.update(quotations)
+          .set({ status: 'rejected', is_selected: false, updated_at: new Date() })
+          .where(eq(quotations.id, approval.quotation_id));
+      }
 
       return updatedApproval;
     });
@@ -278,22 +388,27 @@ exports.rejectApproval = async (req, res) => {
     // Notify submitting officer
     await createNotification({
       userId: approval.submitted_by,
-      title: 'Quotation Selection Rejected',
-      message: `Your selection for RFQ ${rfq.rfq_number} was rejected by the manager. Remarks: ${remarks}`,
+      title: 'RFQ Submission Rejected',
+      message: `Your approval request for RFQ ${rfq.rfq_number} was rejected by the manager. Remarks: ${remarks}`,
       type: 'approval_rejected',
       entityId: id
     });
 
-    // Notify vendor users
-    const vendorUsers = await db.select().from(users).where(eq(users.vendor_id, quotation.vendor_id));
-    for (const u of vendorUsers) {
-      await createNotification({
-        userId: u.id,
-        title: 'Quotation Status Update',
-        message: `Your quotation for RFQ ${rfq.rfq_number} was reviewed and rejected.`,
-        type: 'quotation_rejected',
-        entityId: quotation.id
-      });
+    // Notify vendor users only if a quotation was associated
+    if (approval.quotation_id) {
+      const [quotation] = await db.select().from(quotations).where(eq(quotations.id, approval.quotation_id));
+      if (quotation) {
+        const vendorUsers = await db.select().from(users).where(eq(users.vendor_id, quotation.vendor_id));
+        for (const u of vendorUsers) {
+          await createNotification({
+            userId: u.id,
+            title: 'Quotation Status Update',
+            message: `Your quotation for RFQ ${rfq.rfq_number} was reviewed and rejected.`,
+            type: 'quotation_rejected',
+            entityId: quotation.id
+          });
+        }
+      }
     }
 
     await createLog({
@@ -330,8 +445,8 @@ exports.getPendingApprovals = async (req, res) => {
     })
     .from(approvals)
     .innerJoin(rfqs, eq(rfqs.id, approvals.rfq_id))
-    .innerJoin(quotations, eq(quotations.id, approvals.quotation_id))
-    .innerJoin(vendors, eq(vendors.id, quotations.vendor_id))
+    .leftJoin(quotations, eq(quotations.id, approvals.quotation_id))
+    .leftJoin(vendors, eq(vendors.id, quotations.vendor_id))
     .innerJoin(users, eq(users.id, approvals.submitted_by))
     .where(eq(approvals.status, 'pending'))
     .orderBy(desc(approvals.submitted_at));
@@ -363,8 +478,8 @@ exports.getApprovalHistory = async (req, res) => {
     })
     .from(approvals)
     .innerJoin(rfqs, eq(rfqs.id, approvals.rfq_id))
-    .innerJoin(quotations, eq(quotations.id, approvals.quotation_id))
-    .innerJoin(vendors, eq(vendors.id, quotations.vendor_id))
+    .leftJoin(quotations, eq(quotations.id, approvals.quotation_id))
+    .leftJoin(vendors, eq(vendors.id, quotations.vendor_id))
     .innerJoin(users, eq(users.id, approvals.submitted_by))
     .where(ne(approvals.status, 'pending'))
     .orderBy(desc(approvals.reviewed_at));

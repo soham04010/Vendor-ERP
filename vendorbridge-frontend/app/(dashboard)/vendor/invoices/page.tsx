@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { invoiceApi } from '@/lib/api/invoice.api';
 import { vendorApi } from '@/lib/api/vendor.api';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import DataTable from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
@@ -12,10 +12,10 @@ import InvoiceActions from '@/components/invoice/InvoiceActions';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { formatDate } from '@/lib/utils/formatDate';
 import { toast } from 'sonner';
-import { FileText, RefreshCw, Loader2, ArrowLeft, Printer, Download } from 'lucide-react';
+import { FileText, Loader2, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
-export default function OfficerInvoicesPage() {
+export default function VendorInvoicesPage() {
   const { user } = useAuthStore();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,11 +29,11 @@ export default function OfficerInvoicesPage() {
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
   const loadInvoices = async () => {
+    if (!user || !user.vendor_id) return;
     setIsLoading(true);
     try {
-      const res = await invoiceApi.getAll();
-      const invs = res.invoices || res || [];
-      setInvoices(invs);
+      const res = await invoiceApi.getVendorMine();
+      setInvoices(res || []);
     } catch (err) {
       console.error('Error loading invoices:', err);
       toast.error('Failed to load invoices');
@@ -44,7 +44,7 @@ export default function OfficerInvoicesPage() {
 
   useEffect(() => {
     loadInvoices();
-  }, []);
+  }, [user]);
 
   const handleInvoiceClick = async (invoice: any) => {
     setSelectedInvoice(invoice);
@@ -110,13 +110,7 @@ export default function OfficerInvoicesPage() {
       )
     },
     {
-      header: 'Vendor Name',
-      accessor: (row: any) => (
-        <span className="font-medium text-gray-900 dark:text-white text-xs">{row.vendor_name}</span>
-      )
-    },
-    {
-      header: 'Amount',
+      header: 'Billed Amount',
       accessor: (row: any) => (
         <span className="font-bold text-gray-900 dark:text-white text-xs">{formatCurrency(row.total_amount)}</span>
       )
@@ -152,9 +146,9 @@ export default function OfficerInvoicesPage() {
       {/* Header */}
       <div className="flex justify-between items-center no-print">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Invoices</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">My Invoices</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Manage billing, issue invoices, print documents, send PDF copies via email, and record payments.
+            Access generated billing invoices, view payment status, and download/print digital invoice copies.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={loadInvoices} className="gap-1.5 h-8">
@@ -163,7 +157,7 @@ export default function OfficerInvoicesPage() {
         </Button>
       </div>
 
-      {/* Selected Details View (Overrides list if active for print/clean viewing) */}
+      {/* Selected Details View */}
       {selectedInvoice ? (
         <div className="space-y-6">
           <div className="flex items-center gap-3 no-print">
@@ -188,7 +182,7 @@ export default function OfficerInvoicesPage() {
             <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-12">
               <div className="flex flex-col items-center justify-center space-y-4">
                 <Loader2 className="animate-spin text-blue-500" size={32} />
-                <p className="text-xs text-gray-500">Loading invoice items and vendor records...</p>
+                <p className="text-xs text-gray-500">Loading invoice details...</p>
               </div>
             </Card>
           ) : invoiceDetails ? (
@@ -196,7 +190,7 @@ export default function OfficerInvoicesPage() {
               <InvoiceActions
                 invoiceId={selectedInvoice.id}
                 invoiceStatus={invoiceDetails.invoice.status}
-                userRole={user?.role || 'officer'}
+                userRole={user?.role || 'vendor'}
                 onStatusUpdated={handleStatusUpdated}
               />
               <InvoiceTemplate
@@ -207,7 +201,7 @@ export default function OfficerInvoicesPage() {
               />
             </div>
           ) : (
-            <p className="text-xs text-red-500">Failed to load details.</p>
+            <p className="text-xs text-red-500 font-semibold">Failed to load invoice details.</p>
           )}
         </div>
       ) : (
@@ -218,7 +212,7 @@ export default function OfficerInvoicesPage() {
               columns={columns}
               data={invoices}
               isLoading={isLoading}
-              emptyMessage="No billing invoices generated yet. Go to 'Purchase Orders' to generate one."
+              emptyMessage="No invoices generated yet for your purchase orders."
             />
           </CardContent>
         </Card>

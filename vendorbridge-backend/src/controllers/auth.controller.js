@@ -61,7 +61,9 @@ exports.register = async (req, res) => {
           email: email,
           phone: phone,
           address: vendorAddress,
+          status: 'inactive'
         }).returning();
+        
         
         vendorId = insertedVendor.id;
       }

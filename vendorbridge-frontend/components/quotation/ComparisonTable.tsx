@@ -37,13 +37,19 @@ interface ComparisonTableProps {
   quotations: Quotation[];
   onSelectWinner?: (id: string) => void;
   disabled?: boolean;
+  isOfficerSelection?: boolean;
+  selectedQuotationIds?: string[];
+  onToggleRecommend?: (id: string) => void;
 }
 
 export default function ComparisonTable({ 
   rfqItems, 
   quotations, 
   onSelectWinner, 
-  disabled = false 
+  disabled = false,
+  isOfficerSelection = false,
+  selectedQuotationIds = [],
+  onToggleRecommend
 }: ComparisonTableProps) {
   
   if (quotations.length === 0) {
@@ -81,14 +87,25 @@ export default function ComparisonTable({
             <TableHead className="w-64 font-bold text-gray-900 dark:text-white">RFQ Line Items / Criteria</TableHead>
             {quotations.map((quote) => {
               const name = quote.vendor?.name || quote.vendor_name || 'Vendor';
+              const gst = (quote as any).vendor_gst || (quote as any).vendor?.gst_number;
               const isSelected = quote.status === 'selected' || quote.is_selected;
               return (
                 <TableHead key={quote.id} className="text-center w-60">
                   <div className="space-y-1 py-2">
                     <span className="font-bold text-gray-950 dark:text-white block text-sm">{name}</span>
+                    {gst && (
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-mono">
+                        GST: {gst}
+                      </span>
+                    )}
                     {isSelected && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-300">
                         Selected Winner
+                      </span>
+                    )}
+                    {(quote as any).recommended_by_officer && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 block w-fit mx-auto mt-1">
+                        Officer Recommended
                       </span>
                     )}
                   </div>
@@ -185,7 +202,7 @@ export default function ComparisonTable({
           </TableRow>
 
           {/* Winner Selection Actions */}
-          {!disabled && (
+          {!disabled && onSelectWinner && (
             <TableRow>
               <TableCell className="font-bold text-gray-900 dark:text-white">Action</TableCell>
               {quotations.map((quote) => {
@@ -206,6 +223,35 @@ export default function ComparisonTable({
                         Select as Winner
                       </Button>
                     )}
+                  </TableCell>
+                );
+              })}
+            </TableRow>
+          )}
+
+          {/* Officer Recommendation Selection Row */}
+          {isOfficerSelection && onToggleRecommend && (
+            <TableRow>
+              <TableCell className="font-bold text-gray-900 dark:text-white">Recommendation</TableCell>
+              {quotations.map((quote) => {
+                const isRecommended = selectedQuotationIds.includes(quote.id);
+                return (
+                  <TableCell key={quote.id} className="text-center py-4">
+                    <Button
+                      size="sm"
+                      onClick={() => onToggleRecommend(quote.id)}
+                      className="text-xs gap-1.5"
+                      variant={isRecommended ? "default" : "outline"}
+                      disabled={disabled}
+                    >
+                      {isRecommended ? (
+                        <>
+                          <Check size={14} /> Recommended
+                        </>
+                      ) : (
+                        "Recommend Bid"
+                      )}
+                    </Button>
                   </TableCell>
                 );
               })}

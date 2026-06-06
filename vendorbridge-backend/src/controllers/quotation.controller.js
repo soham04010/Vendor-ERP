@@ -108,22 +108,21 @@ exports.submitQuotation = async (req, res) => {
       return res.status(400).json({ error: 'User is not associated with any vendor' });
     }
 
+    // Check if vendor is active
+    const [vendorProfile] = await db.select().from(vendors).where(eq(vendors.id, req.user.vendor_id));
+    if (!vendorProfile || vendorProfile.status !== 'active') {
+      return res.status(403).json({ error: 'Access denied: vendor account is not active or approved' });
+    }
+
     if (!rfq_id || !subtotal || !delivery_days || !items || items.length === 0) {
       return res.status(400).json({ error: 'Missing required quotation details or items' });
     }
 
-    // Verify vendor is invited to the RFQ
-    const [rfqVendorRecord] = await db.select()
-      .from(rfq_vendors)
-      .where(and(eq(rfq_vendors.rfq_id, rfq_id), eq(rfq_vendors.vendor_id, req.user.vendor_id)));
-
-    if (!rfqVendorRecord) {
-      return res.status(403).json({ error: 'Vendor not invited to this RFQ' });
-    }
+    // Verify RFQ is still active/open
 
     // Verify RFQ is still active/published
     const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, rfq_id));
-    if (!rfq || rfq.status !== 'published') {
+    if (!rfq || rfq.status !== 'open') {
       return res.status(400).json({ error: 'RFQ is not open for submission' });
     }
 
@@ -158,10 +157,21 @@ exports.submitQuotation = async (req, res) => {
         }))
       ).returning();
 
-      // 3. Update RFQ Vendor status to submitted
-      await tx.update(rfq_vendors)
-        .set({ status: 'submitted' })
-        .where(and(eq(rfq_vendors.rfq_id, rfq_id), eq(rfq_vendors.vendor_id, req.user.vendor_id)));
+      // 3. Update RFQ Vendor status to submitted (inserting relationship if it does not exist)
+      const [existingRelation] = await tx.select().from(rfq_vendors).where(
+        and(eq(rfq_vendors.rfq_id, rfq_id), eq(rfq_vendors.vendor_id, req.user.vendor_id))
+      );
+      if (existingRelation) {
+        await tx.update(rfq_vendors)
+          .set({ status: 'submitted' })
+          .where(and(eq(rfq_vendors.rfq_id, rfq_id), eq(rfq_vendors.vendor_id, req.user.vendor_id)));
+      } else {
+        await tx.insert(rfq_vendors).values({
+          rfq_id,
+          vendor_id: req.user.vendor_id,
+          status: 'submitted'
+        });
+      }
 
       return { newQuotation, insertedItems };
     });

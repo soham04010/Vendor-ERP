@@ -19,6 +19,7 @@ export default function OfficerRFQDetailPage() {
   const router = useRouter();
   const [rfq, setRfq] = useState<any>(null);
   const [quotations, setQuotations] = useState<any[]>([]);
+  const [approval, setApproval] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
@@ -34,6 +35,15 @@ export default function OfficerRFQDetailPage() {
         setQuotations(quotesRes.quotations || quotesRes || []);
       } catch (err) {
         console.log('No quotations or failed to load:', err);
+      }
+
+      // Load approval status for this RFQ
+      try {
+        const approvalsList = await approvalApi.getAll();
+        const rfqApproval = approvalsList.find((a: any) => a.rfq_id === id);
+        setApproval(rfqApproval || null);
+      } catch (err) {
+        console.log('Failed to load approvals:', err);
       }
     } catch (err) {
       toast.error('Failed to load RFQ details');
@@ -74,15 +84,14 @@ export default function OfficerRFQDetailPage() {
     }
   };
 
-  const handleSubmitForApproval = async (quoteId: string) => {
+  const handleSubmitRFQForApproval = async () => {
     setIsActionLoading(true);
     try {
       await approvalApi.submit({
-        quotation_id: quoteId,
         rfq_id: id,
-        notes: 'Submitted selected quotation for approval'
+        remarks: 'Awaiting manager review and winner selection'
       });
-      toast.success('Selected quotation submitted for approval successfully!');
+      toast.success('RFQ submitted for approval successfully!');
       loadRFQDetails();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to submit approval request');
@@ -154,6 +163,26 @@ export default function OfficerRFQDetailPage() {
               </Button>
             </Link>
           )}
+
+          {(rfq.status === 'closed' || rfq.status === 'open') && (
+            <>
+              {approval ? (
+                <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 dark:bg-gray-800 border border-gray-150 dark:border-gray-750 rounded-lg">
+                  <span className="text-xs text-gray-500 font-medium">Approval:</span>
+                  <StatusBadge status={approval.status} />
+                </div>
+              ) : (
+                <Button 
+                  onClick={handleSubmitRFQForApproval} 
+                  disabled={isActionLoading || quotations.length === 0} 
+                  className="gap-2"
+                >
+                  {isActionLoading ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+                  <span>Submit for Approval</span>
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -195,14 +224,14 @@ export default function OfficerRFQDetailPage() {
                 <div className="space-y-3">
                   {quotations.map((quote) => {
                     const vendorName = quote.vendor?.name || quote.vendor_name || 'Vendor';
-                    const isSelected = quote.status === 'selected' || quote.is_selected;
+                    const isApproved = quote.status === 'approved';
                     return (
                       <div 
                         key={quote.id} 
                         className={`p-3 border rounded-lg space-y-2 flex flex-col justify-between ${
-                          isSelected 
+                          isApproved 
                             ? 'border-green-300 bg-green-50/10 dark:border-green-900' 
-                            : 'border-gray-150 dark:border-gray-850'
+                            : 'border-gray-150 dark:border-gray-855'
                         }`}
                       >
                         <div className="flex justify-between items-start">
@@ -212,19 +241,6 @@ export default function OfficerRFQDetailPage() {
                           </div>
                           <StatusBadge status={quote.status} />
                         </div>
-                        
-                        {/* If quote is selected and not yet approved / PO generated, show submit for approval */}
-                        {isSelected && quote.status === 'selected' && (
-                          <Button 
-                            size="sm" 
-                            disabled={isActionLoading}
-                            onClick={() => handleSubmitForApproval(quote.id)}
-                            className="w-full gap-2 text-xs"
-                          >
-                            <Send size={12} />
-                            <span>Submit for Approval</span>
-                          </Button>
-                        )}
                       </div>
                     );
                   })}

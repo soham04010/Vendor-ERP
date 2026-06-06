@@ -33,6 +33,11 @@ export default function ManagerReportsPage() {
   const [spendingData, setSpendingData] = useState<any[]>([]);
   const [vendorPerformance, setVendorPerformance] = useState<any[]>([]);
   const [approvalStats, setApprovalStats] = useState<any[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     async function loadReportsData() {
@@ -169,12 +174,12 @@ export default function ManagerReportsPage() {
             <p className="text-xs text-gray-500">Procurement financial commitments over months</p>
           </div>
           <div className="h-80 w-full">
-            {spendingData.length === 0 ? (
+            {!mounted || spendingData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-gray-450">
-                No monthly transactions recorded yet.
+                {!mounted ? "Loading chart..." : "No monthly transactions recorded yet."}
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={spendingData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
@@ -207,12 +212,12 @@ export default function ManagerReportsPage() {
               <p className="text-xs text-gray-500">Cumulative purchase order value per supplier</p>
             </div>
             <div className="h-64 w-full">
-              {vendorPerformance.length === 0 ? (
+              {!mounted || vendorPerformance.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                  No vendor spend metrics recorded.
+                  {!mounted ? "Loading chart..." : "No vendor spend metrics recorded."}
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={vendorPerformance} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-gray-150 dark:stroke-gray-850" />
                     <XAxis type="number" className="text-[10px]" tickLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
@@ -237,12 +242,12 @@ export default function ManagerReportsPage() {
               <p className="text-xs text-gray-500">Proportion of approved, rejected, and pending bid selections</p>
             </div>
             <div className="h-64 flex flex-col sm:flex-row items-center justify-center gap-6">
-              {approvalStats.length === 0 || totalApprovalsCount === 0 ? (
-                <div className="text-xs text-gray-400">No approvals data recorded.</div>
+              {!mounted || approvalStats.length === 0 || totalApprovalsCount === 0 ? (
+                <div className="text-xs text-gray-400">{!mounted ? "Loading chart..." : "No approvals data recorded."}</div>
               ) : (
                 <>
                   <div className="h-full w-full sm:w-1/2">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height={240}>
                       <PieChart>
                         <Pie
                           data={approvalStats}
