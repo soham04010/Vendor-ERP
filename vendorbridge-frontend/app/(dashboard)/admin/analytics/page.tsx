@@ -34,6 +34,11 @@ export default function AdminAnalyticsPage() {
   const [vendorPerformance, setVendorPerformance] = useState<any[]>([]);
   const [rfqStats, setRfqStats] = useState<any[]>([]);
   const [approvalStats, setApprovalStats] = useState<any[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     async function loadAnalytics() {
@@ -152,12 +157,12 @@ export default function AdminAnalyticsPage() {
             <p className="text-xs text-gray-500">Procurement financial commitments over time</p>
           </div>
           <div className="h-80 w-full">
-            {spendingData.length === 0 ? (
+            {!mounted || spendingData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                No monthly transactions recorded.
+                {!mounted ? "Loading chart..." : "No monthly transactions recorded."}
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={spendingData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
@@ -190,25 +195,25 @@ export default function AdminAnalyticsPage() {
               <p className="text-xs text-gray-500">Vendors with highest purchase orders value</p>
             </div>
             <div className="h-64 w-full">
-              {vendorPerformance.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                  No vendor metrics recorded.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={vendorPerformance} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-gray-150 dark:stroke-gray-850" />
-                    <XAxis type="number" className="text-[10px]" tickLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
-                    <YAxis type="category" dataKey="vendor_name" className="text-[10px]" tickLine={false} width={100} />
-                    <Tooltip
-                      formatter={(value: any) => [`₹${parseFloat(value).toLocaleString('en-IN')}`, 'Spent Value']}
-                      contentStyle={{ fontSize: '11px' }}
-                    />
-                    <Bar dataKey="total_po_value" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={25} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+            {!mounted || vendorPerformance.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-gray-400">
+                {!mounted ? "Loading chart..." : "No vendor metrics recorded."}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={vendorPerformance} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-gray-150 dark:stroke-gray-850" />
+                  <XAxis type="number" className="text-[10px]" tickLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
+                  <YAxis type="category" dataKey="vendor_name" className="text-[10px]" tickLine={false} width={100} />
+                  <Tooltip
+                    formatter={(value: any) => [`₹${parseFloat(value).toLocaleString('en-IN')}`, 'Spent Value']}
+                    contentStyle={{ fontSize: '11px' }}
+                  />
+                  <Bar dataKey="total_po_value" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={25} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
           </CardContent>
         </Card>
 
@@ -220,12 +225,12 @@ export default function AdminAnalyticsPage() {
               <p className="text-xs text-gray-500">Comparison of RFQs in draft, open, closed, or award status</p>
             </div>
             <div className="h-64 flex flex-col sm:flex-row items-center justify-center gap-6">
-              {rfqStats.length === 0 ? (
-                <div className="text-xs text-gray-400">No RFQs recorded.</div>
+              {!mounted || rfqStats.length === 0 ? (
+                <div className="text-xs text-gray-400">{!mounted ? "Loading chart..." : "No RFQs recorded."}</div>
               ) : (
                 <>
                   <div className="h-full w-full sm:w-1/2">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height={240}>
                       <PieChart>
                         <Pie
                           data={rfqStats}

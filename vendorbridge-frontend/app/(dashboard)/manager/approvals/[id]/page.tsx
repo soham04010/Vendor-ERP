@@ -23,6 +23,7 @@ export default function ApprovalDetailPage() {
   const [approval, setApproval] = useState<any>(null);
   const [rfq, setRfq] = useState<any>(null);
   const [detailedQuotations, setDetailedQuotations] = useState<any[]>([]);
+  const [selectedQuotationId, setSelectedQuotationId] = useState<string>('');
   const [remarks, setRemarks] = useState('');
   
   const [isLoading, setIsLoading] = useState(true);
@@ -37,6 +38,7 @@ export default function ApprovalDetailPage() {
       // 1. Fetch approval details
       const appRes = await approvalApi.getById(id);
       setApproval(appRes);
+      setSelectedQuotationId(appRes.quotation_id);
 
       // 2. Fetch RFQ details (including items)
       const rfqRes = await rfqApi.getById(appRes.rfq_id);
@@ -59,7 +61,9 @@ export default function ApprovalDetailPage() {
           subtotal: qDetails?.subtotal || (parseFloat(c.total_amount) / 1.18),
           tax_amount: qDetails?.tax_amount || (parseFloat(c.total_amount) - (parseFloat(c.total_amount) / 1.18)),
           notes: qDetails?.notes || '',
-          vendor: { name: c.vendor_name }
+          vendor_gst: c.vendor_gst || qDetails?.vendor_gst || '',
+          vendor: { name: c.vendor_name },
+          recommended_by_officer: qDetails?.is_selected || c.is_selected || false
         };
       });
 
@@ -81,7 +85,7 @@ export default function ApprovalDetailPage() {
   const handleApprove = async () => {
     setIsActionLoading(true);
     try {
-      await approvalApi.approve(id, remarks);
+      await approvalApi.approve(id, remarks, selectedQuotationId);
       toast.success('Bid selection approved! Purchase Order issued successfully.');
       router.push('/manager/approvals');
     } catch (err: any) {
@@ -143,8 +147,20 @@ export default function ApprovalDetailPage() {
   }
 
   // Find the selected quotation
-  const selectedQuote = detailedQuotations.find(q => q.id === approval.quotation_id || q.status === 'selected' || q.is_selected);
+  const selectedQuote = detailedQuotations.find(q => q.id === selectedQuotationId);
   const selectedQuoteAmount = selectedQuote ? parseFloat(selectedQuote.total_amount) : 0;
+  const selectedVendorName = selectedQuote ? (selectedQuote.vendor?.name || selectedQuote.vendor_name || 'Vendor') : (approval?.vendor_name || 'None Selected');
+  const recommendedQuotes = detailedQuotations.filter(q => q.recommended_by_officer);
+  const recommendedVendorNames = recommendedQuotes.length > 0 
+    ? recommendedQuotes.map(q => q.vendor?.name || q.vendor_name || 'Vendor').join(', ')
+    : 'None Selected';
+
+  // Override selections dynamically based on manager choice
+  const displayQuotations = detailedQuotations.map(q => ({
+    ...q,
+    is_selected: q.id === selectedQuotationId,
+    status: q.id === selectedQuotationId ? 'selected' : 'submitted'
+  }));
 
   return (
     <div className="space-y-6">
@@ -172,17 +188,18 @@ export default function ApprovalDetailPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Bid Comparison Card */}
           <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <CardHeader className="border-b border-gray-100 dark:border-gray-850 py-4">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-855 py-4">
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-500">Bid Comparison Table</CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              {detailedQuotations.length === 0 ? (
+              {displayQuotations.length === 0 ? (
                 <p className="text-xs text-gray-500 py-6 text-center">No quotation responses found.</p>
               ) : (
                 <ComparisonTable 
                   rfqItems={rfq.items || []} 
-                  quotations={detailedQuotations} 
-                  disabled={true} 
+                  quotations={displayQuotations} 
+                  onSelectWinner={(quoteId) => setSelectedQuotationId(quoteId)}
+                  disabled={approval.status !== 'pending'} 
                 />
               )}
             </CardContent>
@@ -190,7 +207,7 @@ export default function ApprovalDetailPage() {
 
           {/* Scope and items details */}
           <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <CardHeader className="py-4 border-b border-gray-100 dark:border-gray-850">
+            <CardHeader className="py-4 border-b border-gray-100 dark:border-gray-855">
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-500">Procurement Requirement Scope</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
@@ -205,24 +222,34 @@ export default function ApprovalDetailPage() {
         <div className="space-y-6">
           {/* Selection details */}
           <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <CardHeader className="py-4 border-b border-gray-100 dark:border-gray-850">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-gray-500">Officer Proposal Details</CardTitle>
+            <CardHeader className="py-4 border-b border-gray-100 dark:border-gray-855">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-gray-500">Proposal & Selection Details</CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-4 text-xs">
               <div className="space-y-3">
-                <div className="flex justify-between border-b border-gray-50 dark:border-gray-850 pb-2">
-                  <span className="text-gray-500">Proposed Winner:</span>
-                  <span className="font-bold text-gray-900 dark:text-white">{approval.vendor_name}</span>
+                <div className="flex flex-col border-b border-gray-50 dark:border-gray-855 pb-2 gap-1">
+                  <span className="text-gray-500">Proposed by Officer:</span>
+                  <span className="font-semibold text-gray-950 dark:text-white">{recommendedVendorNames}</span>
                 </div>
-                <div className="flex justify-between border-b border-gray-50 dark:border-gray-850 pb-2">
-                  <span className="text-gray-500">Total Selection Price:</span>
+                {selectedQuotationId !== approval.quotation_id && (
+                  <div className="flex justify-between border-b border-gray-55 dark:border-gray-855 pb-2 bg-yellow-50/50 dark:bg-yellow-950/10 p-1.5 rounded">
+                    <span className="text-amber-700 dark:text-amber-400 font-medium">Manager Selection:</span>
+                    <span className="font-bold text-amber-800 dark:text-amber-300">{selectedVendorName} (Override)</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-b border-gray-50 dark:border-gray-855 pb-2">
+                  <span className="text-gray-500">Selected Winner:</span>
+                  <span className="font-bold text-gray-950 dark:text-white">{selectedVendorName}</span>
+                </div>
+                <div className="flex justify-between border-b border-gray-50 dark:border-gray-855 pb-2">
+                  <span className="text-gray-500">Total Price:</span>
                   <span className="font-bold text-gray-900 dark:text-white">INR {selectedQuoteAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
-                <div className="flex justify-between border-b border-gray-50 dark:border-gray-850 pb-2">
+                <div className="flex justify-between border-b border-gray-50 dark:border-gray-855 pb-2">
                   <span className="text-gray-500">Delivery Period:</span>
                   <span className="font-medium text-gray-900 dark:text-white">{selectedQuote?.delivery_days} Days</span>
                 </div>
-                <div className="flex justify-between border-b border-gray-50 dark:border-gray-850 pb-2">
+                <div className="flex justify-between border-b border-gray-50 dark:border-gray-855 pb-2">
                   <span className="text-gray-500">Officer Remarks:</span>
                   <span className="font-medium text-gray-900 dark:text-white italic">"{approval.remarks || 'No remarks provided.'}"</span>
                 </div>
@@ -271,7 +298,13 @@ export default function ApprovalDetailPage() {
                       Reject Bid
                     </Button>
                     <Button 
-                      onClick={() => setShowApproveDialog(true)}
+                      onClick={() => {
+                        if (!selectedQuotationId) {
+                          toast.error('Please select a winning bid from the comparison table first.');
+                          return;
+                        }
+                        setShowApproveDialog(true);
+                      }}
                       disabled={isActionLoading}
                       className="gap-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 dark:bg-green-750 dark:hover:bg-green-800 text-white"
                     >
@@ -323,7 +356,7 @@ export default function ApprovalDetailPage() {
         onClose={() => setShowApproveDialog(false)}
         onConfirm={handleApprove}
         title="Approve Bid Selection"
-        description={`Are you sure you want to approve this bid from ${approval.vendor_name}? Approving this will immediately generate and issue an official Purchase Order for INR ${selectedQuoteAmount.toLocaleString('en-IN')}.`}
+        description={`Are you sure you want to approve this bid from ${selectedVendorName}? Approving this will immediately generate and issue an official Purchase Order for INR ${selectedQuoteAmount.toLocaleString('en-IN')}.`}
         confirmText="Confirm & Approve"
         cancelText="Cancel"
       />

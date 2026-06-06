@@ -1,6 +1,6 @@
 const { eq, and, or, desc, sql } = require('drizzle-orm');
 const { db } = require('../config/db');
-const { rfqs, rfq_items, rfq_attachments, rfq_vendors, vendors, quotations, quotation_items } = require('../db/schema');
+const { rfqs, rfq_items, rfq_attachments, rfq_vendors, vendors, quotations, quotation_items, users } = require('../db/schema');
 const { createLog } = require('../services/log.service');
 const { createNotification } = require('../services/notification.service');
 
@@ -23,7 +23,12 @@ exports.getRfqs = async (req, res) => {
     const { status } = req.query;
     
     if (req.user.role === 'vendor') {
-      // Vendors only see RFQs they are invited to and that are published or closed
+      // Verify current vendor is active first
+      const [vendorProfile] = await db.select().from(vendors).where(eq(vendors.id, req.user.vendor_id));
+      if (!vendorProfile || vendorProfile.status !== 'active') {
+        return res.json([]); // Return empty if vendor is not active
+      }
+
       const vendorRfqs = await db.select({
         id: rfqs.id,
         rfq_number: rfqs.rfq_number,
@@ -35,12 +40,8 @@ exports.getRfqs = async (req, res) => {
         updated_at: rfqs.updated_at
       })
       .from(rfqs)
-      .innerJoin(rfq_vendors, eq(rfq_vendors.rfq_id, rfqs.id))
       .where(
-        and(
-          eq(rfq_vendors.vendor_id, req.user.vendor_id),
-          or(eq(rfqs.status, 'published'), eq(rfqs.status, 'closed'))
-        )
+        or(eq(rfqs.status, 'open'), eq(rfqs.status, 'closed'))
       )
       .orderBy(desc(rfqs.created_at));
       
@@ -75,6 +76,11 @@ exports.getAssignedRfqs = async (req, res) => {
       return res.status(400).json({ error: 'User is not associated with any vendor' });
     }
 
+    const [vendorProfile] = await db.select().from(vendors).where(eq(vendors.id, req.user.vendor_id));
+    if (!vendorProfile || vendorProfile.status !== 'active') {
+      return res.json([]);
+    }
+
     const assigned = await db.select({
       id: rfqs.id,
       rfq_number: rfqs.rfq_number,
@@ -86,12 +92,8 @@ exports.getAssignedRfqs = async (req, res) => {
       updated_at: rfqs.updated_at
     })
     .from(rfqs)
-    .innerJoin(rfq_vendors, eq(rfq_vendors.rfq_id, rfqs.id))
     .where(
-      and(
-        eq(rfq_vendors.vendor_id, req.user.vendor_id),
-        or(eq(rfqs.status, 'published'), eq(rfqs.status, 'closed'))
-      )
+      or(eq(rfqs.status, 'open'), eq(rfqs.status, 'closed'))
     )
     .orderBy(desc(rfqs.created_at));
 
@@ -114,18 +116,15 @@ exports.getRfqById = async (req, res) => {
       return res.status(404).json({ error: 'RFQ not found' });
     }
 
-    // If vendor, check invitation and publication status
+    // If vendor, check invitation, publication status, and activation status
     if (req.user.role === 'vendor') {
-      const [invitation] = await db.select()
-        .from(rfq_vendors)
-        .where(and(eq(rfq_vendors.rfq_id, id), eq(rfq_vendors.vendor_id, req.user.vendor_id)));
-
-      if (!invitation) {
-        return res.status(403).json({ error: 'Access denied: not invited to this RFQ' });
+      const [vendorProfile] = await db.select().from(vendors).where(eq(vendors.id, req.user.vendor_id));
+      if (!vendorProfile || vendorProfile.status !== 'active') {
+        return res.status(403).json({ error: 'Access denied: vendor account is not active or approved' });
       }
 
-      if (rfq.status !== 'published' && rfq.status !== 'closed') {
-        return res.status(403).json({ error: 'Access denied: RFQ is not published' });
+      if (rfq.status !== 'open' && rfq.status !== 'closed') {
+        return res.status(403).json({ error: 'Access denied: RFQ is not open' });
       }
     }
 
@@ -211,11 +210,14 @@ exports.createRfq = async (req, res) => {
         ).returning();
       }
 
-      // 4. Invite Vendors (rfq_vendors)
+      // 4. Invite Vendors (rfq_vendors) - Invite all active vendors automatically
+      const activeVendors = await tx.select({ id: vendors.id }).from(vendors).where(eq(vendors.status, 'active'));
+      const finalVendorIds = activeVendors.map(v => v.id);
+
       let invitedVendors = [];
-      if (vendorIds && vendorIds.length > 0) {
+      if (finalVendorIds.length > 0) {
         invitedVendors = await tx.insert(rfq_vendors).values(
-          vendorIds.map(vId => ({
+          finalVendorIds.map(vId => ({
             rfq_id: newRfq.id,
             vendor_id: vId,
             status: 'invited'
@@ -461,7 +463,7 @@ exports.publishRfq = async (req, res) => {
     }
 
     const [updatedRfq] = await db.update(rfqs)
-      .set({ status: 'published', updated_at: new Date() })
+      .set({ status: 'open', updated_at: new Date() })
       .where(eq(rfqs.id, id))
       .returning();
 
@@ -554,6 +556,7 @@ exports.getRfqQuotations = async (req, res) => {
       rfq_id: quotations.rfq_id,
       vendor_id: quotations.vendor_id,
       vendor_name: vendors.name,
+      vendor_gst: vendors.gst_number,
       subtotal: quotations.subtotal,
       tax_rate: quotations.tax_rate,
       tax_amount: quotations.tax_amount,
@@ -589,6 +592,7 @@ exports.compareQuotations = async (req, res) => {
       id: quotations.id,
       vendor_id: quotations.vendor_id,
       vendor_name: vendors.name,
+      vendor_gst: vendors.gst_number,
       total_amount: quotations.total_amount,
       delivery_days: quotations.delivery_days,
       status: quotations.status,

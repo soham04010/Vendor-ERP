@@ -113,7 +113,7 @@ exports.createVendor = async (req, res) => {
 exports.updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, category, gst_number, email, phone, address, city, state, pincode } = req.body;
+    const { name, category, gst_number, email, phone, address, city, state, pincode, dob } = req.body;
 
     if (req.user.role === 'vendor' && req.user.vendor_id !== id) {
       return res.status(403).json({ error: 'Access denied: cannot update other vendor profiles' });
@@ -136,6 +136,7 @@ exports.updateVendor = async (req, res) => {
     if (city !== undefined) updates.city = city;
     if (state !== undefined) updates.state = state;
     if (pincode !== undefined) updates.pincode = pincode;
+    if (dob !== undefined) updates.dob = dob ? new Date(dob).toISOString().split('T')[0] : null;
 
     const [updatedVendor] = await db.update(vendors)
       .set(updates)

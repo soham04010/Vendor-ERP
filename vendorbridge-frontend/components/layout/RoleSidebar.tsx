@@ -50,6 +50,7 @@ export default function RoleSidebar() {
     { name: 'My Quotations', href: '/vendor/quotations', icon: <FileSpreadsheet size={18} /> },
     { name: 'Purchase Orders', href: '/vendor/purchase-orders', icon: <FileText size={18} /> },
     { name: 'Invoices', href: '/vendor/invoices', icon: <FileText size={18} /> },
+    { name: 'Profile Settings', href: '/vendor/profile', icon: <Settings size={18} /> },
   ];
 
   const managerLinks: SidebarLink[] = [

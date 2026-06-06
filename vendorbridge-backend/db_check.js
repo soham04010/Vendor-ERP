@@ -8,15 +8,22 @@ const pool = new Pool({
 async function main() {
   const client = await pool.connect();
   try {
-    const res = await client.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
+    console.log('Adding dob column to vendors table...');
+    await client.query(`
+      ALTER TABLE vendors 
+      ADD COLUMN IF NOT EXISTS dob DATE;
     `);
-    console.log('Tables in public schema:');
-    res.rows.forEach(row => console.log('- ' + row.table_name));
+    console.log('Added dob column successfully.');
+
+    const res = await client.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'vendors';
+    `);
+    console.log('Columns in vendors table:');
+    res.rows.forEach(row => console.log(`- ${row.column_name}: ${row.data_type}`));
   } catch (err) {
-    console.error('Error running check:', err);
+    console.error('Error running check/alter:', err);
   } finally {
     client.release();
     await pool.end();

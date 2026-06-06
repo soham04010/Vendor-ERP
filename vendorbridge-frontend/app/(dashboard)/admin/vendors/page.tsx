@@ -29,6 +29,7 @@ export default function AdminVendorsPage() {
     city: '',
     state: '',
     pincode: '',
+    dob: '',
   });
 
   // Dialog State
@@ -77,6 +78,7 @@ export default function AdminVendorsPage() {
       city: vendor.city || '',
       state: vendor.state || '',
       pincode: vendor.pincode || '',
+      dob: vendor.dob || '',
     });
   };
 
@@ -92,6 +94,7 @@ export default function AdminVendorsPage() {
       city: '',
       state: '',
       pincode: '',
+      dob: '',
     });
   };
 
@@ -144,7 +147,12 @@ export default function AdminVendorsPage() {
       accessor: (row: any) => (
         <div>
           <p className="font-semibold text-gray-900 dark:text-white">{row.name}</p>
-          <span className="text-[10px] text-gray-400 block">GSTIN: {row.gst_number || 'N/A'}</span>
+          <span className="text-[10px] text-gray-400 block font-medium">GSTIN: {row.gst_number || 'N/A'}</span>
+          {row.dob && (
+            <span className="text-[10px] text-gray-400 block">
+              DOB/Inc: {new Date(row.dob).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </span>
+          )}
           <span className="text-[10px] text-blue-600 font-medium uppercase">{row.category || 'General'}</span>
         </div>
       ),
@@ -159,11 +167,16 @@ export default function AdminVendorsPage() {
       ),
     },
     {
-      header: 'Location',
+      header: 'Location / Address',
       accessor: (row: any) => (
-        <span className="text-xs">
-          {[row.city, row.state].filter(Boolean).join(', ') || 'N/A'}
-        </span>
+        <div className="text-xs space-y-0.5 max-w-[200px]">
+          <p className="font-medium">{[row.city, row.state].filter(Boolean).join(', ') || 'N/A'}</p>
+          {row.address && (
+            <p className="text-[10px] text-gray-450 truncate" title={row.address}>
+              {row.address}
+            </p>
+          )}
+        </div>
       ),
     },
     {
@@ -249,6 +262,11 @@ export default function AdminVendorsPage() {
               <div className="space-y-1">
                 <Label htmlFor="phone">Phone Number</Label>
                 <Input id="phone" name="phone" placeholder="e.g. +91 99999 99999" value={formData.phone} onChange={handleInputChange} />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="dob">Date of Birth / Incorporation</Label>
+                <Input id="dob" name="dob" type="date" value={formData.dob ? formData.dob.split('T')[0] : ''} onChange={handleInputChange} />
               </div>
 
               <div className="space-y-1">
