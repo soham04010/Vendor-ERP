@@ -25,12 +25,3 @@ out/
 build/
 dist/
 
-# Lock files (optional but added per request)
-package-lock.json
-**/package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Package.json (added per request)
-package.json
-**/package.json
